@@ -3,16 +3,20 @@ package com.processorgateway
 import org.jpos.iso.*
 import org.jpos.iso.channel.ASCIIChannel
 import org.jpos.iso.packager.ISO87APackager
+import org.jpos.util.Logger
+import org.jpos.util.SimpleLogListener
 import java.io.IOException
 import java.net.Socket
 import java.util.*
 import javax.net.ssl.SSLSocketFactory
 
-
-class PstkProcessorGwApplication
-
+class PstkProcessorGwApplication;
 fun main(args: Array<String>) {
-   System.out.println("Starting Connection to Paystack Processor Gateway!")
+   println("Starting Connection to Paystack Processor Gateway!")
+
+   val logger = Logger()
+   logger.addListener(SimpleLogListener(System.out))
+
 
    // Create a Date object for the transaction
    val transactionDate = Date()
@@ -27,13 +31,20 @@ fun main(args: Array<String>) {
    val host = "terminal-processor-gateway.paystack.co"
    val port = 8006
 
-   val tmkIsoMessage = createTMKIsoMessage(transDate, transTime, transDateTime)
+   val tmkIsoMessage = Util.createTMKIsoMessage(transDate, transTime, transDateTime)
 
    val CHANNEL_NAME = "NIBSS-CHANNEL"
 
-   var factory: ISOClientSocketFactory = SecureSSLSocketFactory();
+   val factory: ISOClientSocketFactory = SecureSSLSocketFactory();
 
-   val channel = ASCIIChannel(host, port, ISO87APackager())
+   val packager = Packager()
+   packager.setLogger(logger, "")
+
+
+   val channel = ASCIIChannel(host, port, packager)
+   channel.setLogger(logger, "")
+
+   var terminalMasterKey: String;
 
    channel.setSocketFactory(factory);
 
@@ -43,38 +54,31 @@ fun main(args: Array<String>) {
 
    try {
       channel.connect()
-      System.out.println("Connected to $host:$port")
+      println("Connected to $host:$port")
       channel.send(tmkIsoMessage)
       val response = channel.receive()
       channel.disconnect()
       println("Response: $response")
+      if (response.getString(39).endsWith("00")) {  // check if 39 equals 00
+         println("TMK Request Successful")
+         println(response.getString(53))
+         val componentKey1 = "<< Your Component Key 1 >>"
+         val componentKey2 = "<< Your Component Key 2 >>"
+
+         terminalMasterKey = Util.getDecryptedTMKFromHost(response.getString(53), componentKey1, componentKey2);
+         println("Terminal Master Key")
+         println(terminalMasterKey);
+      } else {
+         response.getString(39)
+      }
 
    } catch (e: Exception) {
-      System.out.println("Error: ${e.message}")
+      println("Error: ${e.message}")
       // e.printStackTrace()
    } finally {
       channel.disconnect()
-      System.out.println("Disconnected from $host:$port")
+      println("Disconnected from $host:$port")
    }
-}
-
-
-fun createTMKIsoMessage(transDate: String, transTime: String, transDateTime: String): ISOMsg {
-    val isoMessage = ISOMsg()
-    isoMessage.setMTI("0800")
-    isoMessage.set(3, "9A0000")
-    isoMessage.set(7, transDateTime)
-    isoMessage.set(11, generateStan())
-    isoMessage.set(12, transTime)
-    isoMessage.set(13, transDate)
-    isoMessage.set(41, "2PSTAD61")
-    return isoMessage
-}
-
-fun generateStan(): String {
-   val random = Random()
-   val stan = random.nextInt(999999)
-   return ISOUtil.zeropad(stan.toString(), 6)
 }
 
 class SecureSSLSocketFactory : ISOClientSocketFactory {
