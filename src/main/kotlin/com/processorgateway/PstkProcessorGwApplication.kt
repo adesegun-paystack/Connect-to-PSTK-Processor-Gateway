@@ -2,12 +2,17 @@ package com.processorgateway
 
 import org.jpos.iso.*
 import org.jpos.iso.channel.ASCIIChannel
-import org.jpos.iso.packager.ISO87APackager
 import org.jpos.util.Logger
 import org.jpos.util.SimpleLogListener
 import java.io.IOException
 import java.net.Socket
+import java.security.InvalidKeyException
+import java.security.NoSuchAlgorithmException
+import java.security.NoSuchProviderException
 import java.util.*
+import javax.crypto.BadPaddingException
+import javax.crypto.IllegalBlockSizeException
+import javax.crypto.NoSuchPaddingException
 import javax.net.ssl.SSLSocketFactory
 
 class PstkProcessorGwApplication;
@@ -57,7 +62,7 @@ fun main(args: Array<String>) {
       println("Connected to $host:$port")
       channel.send(tmkIsoMessage)
       val response = channel.receive()
-      channel.disconnect()
+
       println("Response: $response")
       if (response.getString(39).endsWith("00")) {  // check if 39 equals 00
          println("TMK Request Successful")
@@ -68,6 +73,22 @@ fun main(args: Array<String>) {
          terminalMasterKey = Util.getDecryptedTMKFromHost(response.getString(53), componentKey1, componentKey2);
          println("Terminal Master Key")
          println(terminalMasterKey);
+
+         // Start the TSK Process
+         val tskIsoMessage = Util.createTSKIsoMessage(transDate, transTime, transDateTime)
+         channel.send(tskIsoMessage)
+         val tskResponse = channel.receive()
+         println("Response: $tskResponse")
+            if (tskResponse.getString(39).endsWith("00")) {  // check if 39 equals 00
+                println("TSK Request Successful")
+                val terminalSessionKey = Util.getDecryptedTSKFromHost(tskResponse.getString(53), terminalMasterKey)
+                println("Terminal Session Key")
+                println(terminalSessionKey)
+            } else {
+                println("TSK Request Failed")
+                println(tskResponse.getString(39))
+            }
+
       } else {
          response.getString(39)
       }

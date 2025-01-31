@@ -24,6 +24,18 @@ class Util {
             return isoMessage
         }
 
+        fun createTSKIsoMessage(transDate: String, transTime: String, transDateTime: String): ISOMsg {
+            val isoMessage = ISOMsg()
+            isoMessage.setMTI("0800")
+            isoMessage.set(3, "9B0000") // processing code
+            isoMessage.set(7, transDateTime)
+            isoMessage.set(11, generateStan())
+            isoMessage.set(12, transTime)
+            isoMessage.set(13, transDate)
+            isoMessage.set(41, "2PSTAD61")
+            return isoMessage
+        }
+
         fun generateStan(): String {
             val random = Random()
             val stan = random.nextInt(999999)
@@ -77,6 +89,26 @@ class Util {
             val cipher4KeyDecryption = TripleDesCipher(bytesXORKeyComponents)
 
             val plainKey: ByteArray = cipher4KeyDecryption.decode(bytesEncryptedTmk)
+            return ISOUtil.hexString(plainKey)
+        }
+
+        @Throws(
+            NoSuchPaddingException::class,
+            NoSuchAlgorithmException::class,
+            InvalidKeyException::class,
+            NoSuchProviderException::class,
+            BadPaddingException::class,
+            IllegalBlockSizeException::class
+        )
+        fun getDecryptedTSKFromHost(fld53: String, terminalMasterKey: String): String {
+            val encryptedTsk = fld53.substring(0, 32)
+
+            val bytesXORKeyComponents = ISOUtil.hex2byte(terminalMasterKey)
+            val bytesEncryptedTsk = ISOUtil.hex2byte(encryptedTsk)
+
+            val cipher4KeyDecryption = TripleDesCipher(bytesXORKeyComponents)
+
+            val plainKey = cipher4KeyDecryption.decode(bytesEncryptedTsk)
             return ISOUtil.hexString(plainKey)
         }
     }
