@@ -1,8 +1,11 @@
 package com.processorgateway
 
+import org.jpos.iso.ISOException
 import org.jpos.iso.ISOMsg
 import org.jpos.iso.ISOUtil
+import java.io.IOException
 import java.security.InvalidKeyException
+import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
 import java.security.NoSuchProviderException
 import java.util.*
@@ -12,31 +15,126 @@ import javax.crypto.NoSuchPaddingException
 
 class Util {
     companion object {
-        fun createTMKIsoMessage(transDate: String, transTime: String, transDateTime: String): ISOMsg {
+        fun createTMKIsoMessage(transDate: String, transTime: String, transDateTime: String, terminalId: String): ISOMsg {
             val isoMessage = ISOMsg()
-            isoMessage.setMTI("0800")
+            isoMessage.mti = "0800"
             isoMessage.set(3, "9A0000")
             isoMessage.set(7, transDateTime)
             isoMessage.set(11, generateStan())
             isoMessage.set(12, transTime)
             isoMessage.set(13, transDate)
-            isoMessage.set(41, "2PSTAD61")
+            isoMessage.set(41, terminalId)
             return isoMessage
         }
 
-        fun createTSKIsoMessage(transDate: String, transTime: String, transDateTime: String): ISOMsg {
+        fun createTSKIsoMessage(transDate: String, transTime: String, transDateTime: String, terminalId: String): ISOMsg {
             val isoMessage = ISOMsg()
-            isoMessage.setMTI("0800")
+            isoMessage.mti = "0800"
             isoMessage.set(3, "9B0000") // processing code
             isoMessage.set(7, transDateTime)
             isoMessage.set(11, generateStan())
             isoMessage.set(12, transTime)
             isoMessage.set(13, transDate)
-            isoMessage.set(41, "2PSTAD61")
+            isoMessage.set(41, terminalId)
             return isoMessage
         }
 
-        fun generateStan(): String {
+        fun createTPKIsoMessage(transDate: String, transTime: String, transDateTime: String, terminalId: String): ISOMsg {
+            val isoMessage = ISOMsg();
+            isoMessage.mti = "0800";
+            isoMessage.set(3, "9G0000"); // processing code
+            isoMessage.set(7, transDateTime);
+            isoMessage.set(11, generateStan());
+            isoMessage.set(12, transTime);
+            isoMessage.set(13, transDate);
+            isoMessage.set(41, terminalId);
+            return isoMessage;
+        }
+
+        fun createParamDownloadIsoMessage(transDate: String, transTime: String, transDateTime: String, terminalId: String, terminalSessionKey: String, packager: Packager ): ISOMsg {
+            val isoMessage = ISOMsg();
+            isoMessage.mti = "0800"
+            isoMessage.packager = packager
+            isoMessage.set(3, "9C0000")
+            isoMessage.set(7, transDateTime)
+            isoMessage.set(11, generateStan())
+            isoMessage.set(12, transTime)
+            isoMessage.set(13, transDate)
+            isoMessage.set(41, terminalId)
+            isoMessage.set(62, "01008$terminalId")
+            isoMessage.set(
+                64,
+                ISOUtil.hex2byte("0000000000000000000000000000000000000000000000000000000000000000")
+            )
+            isoMessage.recalcBitMap()
+            val prepack: ByteArray = isoMessage.pack()
+            isoMessage.set(
+                64,
+                performSHA256Hash(
+                    ISOUtil.trim(prepack, prepack.size - 64),
+                    ISOUtil.hex2byte(terminalSessionKey)
+                )
+            )
+            return isoMessage;
+        }
+
+        fun createCAPKDownloadIsoMessage(transDate: String, transTime: String, transDateTime: String, terminalId: String, terminalSessionKey: String, packager: Packager): ISOMsg {
+            val isoMessage = ISOMsg();
+            isoMessage.mti = "0800"
+            isoMessage.packager = packager
+            isoMessage.set(3, "9E0000")
+            isoMessage.set(7, transDateTime)
+            isoMessage.set(11, generateStan())
+            isoMessage.set(12, transTime)
+            isoMessage.set(13, transDate)
+            isoMessage.set(41, terminalId)
+            isoMessage.set(63, "01008$terminalId")
+            isoMessage.set(
+                64,
+                ISOUtil.hex2byte("0000000000000000000000000000000000000000000000000000000000000000")
+            )
+            isoMessage.recalcBitMap()
+            val prepack: ByteArray = isoMessage.pack()
+            isoMessage.set(
+                64,
+                performSHA256Hash(
+                    ISOUtil.trim(prepack, prepack.size - 64),
+                    ISOUtil.hex2byte(terminalSessionKey)
+                )
+            )
+            return isoMessage;
+
+        }
+
+        fun createAIDDownloadIsoMessage(transDate: String, transTime: String, transDateTime: String, terminalId: String, terminalSessionKey: String, packager: Packager): ISOMsg {
+            val isoMessage = ISOMsg();
+            isoMessage.mti = "0800"
+            isoMessage.packager = packager;
+            isoMessage.set(3, "9F0000")
+            isoMessage.set(7, transDateTime)
+            isoMessage.set(11, generateStan())
+            isoMessage.set(12, transTime)
+            isoMessage.set(13, transDate)
+            isoMessage.set(41, terminalId)
+            isoMessage.set(63, "01008$terminalId")
+            isoMessage.set(
+                64,
+                ISOUtil.hex2byte("0000000000000000000000000000000000000000000000000000000000000000")
+            )
+            isoMessage.recalcBitMap()
+            val prepack: ByteArray = isoMessage.pack()
+            isoMessage.set(
+                64,
+                performSHA256Hash(
+                    ISOUtil.trim(prepack, prepack.size - 64),
+                    ISOUtil.hex2byte(terminalSessionKey)
+                )
+            )
+            return isoMessage;
+
+        }
+
+        private fun generateStan(): String {
             val random = Random()
             val stan = random.nextInt(999999)
             return ISOUtil.zeropad(stan.toString(), 6)
@@ -69,6 +167,14 @@ class Util {
             return String(chars)
         }
 
+        @Throws(NoSuchAlgorithmException::class)
+        fun performSHA256Hash(input: ByteArray?, seed: ByteArray?): ByteArray {
+            val md = MessageDigest.getInstance("SHA-256")
+            md.reset()
+            md.update(seed)
+            md.update(input)
+            return md.digest()
+        }
 
         @Throws(
             NoSuchPaddingException::class,
